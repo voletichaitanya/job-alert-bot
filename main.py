@@ -8,12 +8,18 @@ import json
 import smtplib
 import os
 
+# ================== ENV VARIABLES ==================
+
+EMAIL = os.getenv("EMAIL")
+PASSWORD = os.getenv("PASSWORD")
+APP_PASSWORD = os.getenv("APP_PASSWORD")
+
 # ================== EMAIL FUNCTION ==================
 
 def send_email(new_jobs):
-    sender = os.getenv("EMAIL")
-    password = os.getenv("APP_PASSWORD")
-    receiver = os.getenv("EMAIL")
+    sender = EMAIL
+    password = APP_PASSWORD
+    receiver = EMAIL
 
     message = "Subject: 🚨 New Job Alert!\n\n"
 
@@ -53,15 +59,12 @@ def check_jobs():
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    email = os.getenv("EMAIL")
-    password = os.getenv("PASSWORD")
-
     # LOGIN
     driver.get("https://www.placements.codegnan.com/student/login")
     time.sleep(3)
 
-    driver.find_element(By.ID, "username").send_keys(email)
-    driver.find_element(By.ID, "password").send_keys(password)
+    driver.find_element(By.ID, "username").send_keys(EMAIL)
+    driver.find_element(By.ID, "password").send_keys(PASSWORD)
 
     driver.find_element(By.XPATH, "//button[@type='submit']").click()
     time.sleep(3)
@@ -112,3 +115,7 @@ def check_jobs():
 
     driver.quit()
 
+# ================== RUN ==================
+
+if __name__ == "__main__":
+    check_jobs()
