@@ -154,9 +154,11 @@ def check_jobs():
     finally:
         driver.quit()
         print("🧹 Browser closed")
-with open("last_run.txt", "w") as f:
-    f.write(str(datetime.datetime.now()))
-print("RUN TIME:", datetime.datetime.utcnow())
+        # ✅ FIXED: These lines are now INSIDE the function
+        with open("last_run.txt", "w") as f:
+            f.write(str(datetime.datetime.now()))
+        print("RUN TIME:", datetime.datetime.utcnow())
+
 # ================== RUN ==================
 
 if __name__ == "__main__":
