@@ -27,7 +27,7 @@ jobs:
       - name: Install Chrome
         run: |
           sudo apt update
-          sudo apt install -y chromium-browser
+          sudo apt install -y google-chrome-stable
 
       - name: Run script
         run: python main.py
