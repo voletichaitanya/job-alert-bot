@@ -15,7 +15,6 @@ EMAIL = os.getenv("EMAIL")
 PASSWORD = os.getenv("PASSWORD")
 APP_PASSWORD = os.getenv("APP_PASSWORD")
 
-# ✅ Validate env variables
 if not EMAIL or not PASSWORD or not APP_PASSWORD:
     raise Exception("❌ Missing environment variables")
 
@@ -45,7 +44,7 @@ def send_email(new_jobs):
     except Exception as e:
         print("❌ Email error:", e)
 
-# ================== MEMORY FUNCTIONS ==================
+# ================== MEMORY ==================
 
 def load_old_jobs():
     try:
@@ -65,17 +64,18 @@ def check_jobs():
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-blink-features=AutomationControlled")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    wait = WebDriverWait(driver, 10)
+    wait = WebDriverWait(driver, 15)
 
     try:
         print("🌐 Opening login page...")
         driver.get("https://www.placements.codegnan.com/student/login")
 
-        # Wait for login fields
         wait.until(EC.presence_of_element_located((By.ID, "username")))
 
         print("🔐 Logging in...")
@@ -83,7 +83,11 @@ def check_jobs():
         driver.find_element(By.ID, "password").send_keys(PASSWORD)
         driver.find_element(By.XPATH, "//button[@type='submit']").click()
 
-        # Handle logout popup (optional)
+        # 🔍 DEBUG LOGIN
+        wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+        print("🔎 Current URL after login:", driver.current_url)
+
+        # Handle logout popup
         try:
             wait.until(EC.presence_of_element_located(
                 (By.XPATH, "//button[contains(text(),'Logout All Sessions')]")
@@ -96,7 +100,17 @@ def check_jobs():
         print("📄 Opening job listings...")
         driver.get("https://www.placements.codegnan.com/student/job-listings")
 
-        wait.until(EC.presence_of_element_located((By.XPATH, "//table/tbody/tr")))
+        # 🔍 DEBUG PAGE
+        wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
+        print("🔎 Current URL (jobs page):", driver.current_url)
+
+        # Try waiting for table safely
+        try:
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+        except:
+            print("⚠️ Table not found. Page source preview:")
+            print(driver.page_source[:1000])
+            return
 
         # EXTRACT JOBS
         rows = driver.find_elements(By.XPATH, "//table/tbody/tr")
@@ -126,7 +140,6 @@ def check_jobs():
         else:
             print("\nNo new jobs")
 
-        # SAVE
         save_jobs(current_jobs)
 
     except Exception as e:
