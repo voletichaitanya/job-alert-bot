@@ -7,7 +7,8 @@ import time
 import json
 import smtplib
 import os
-
+if not EMAIL or not PASSWORD or not APP_PASSWORD:
+    raise Exception("❌ Missing environment variables")
 # ================== ENV VARIABLES ==================
 
 EMAIL = os.getenv("EMAIL")
