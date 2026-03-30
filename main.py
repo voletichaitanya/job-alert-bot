@@ -153,7 +153,8 @@ def check_jobs():
     finally:
         driver.quit()
         print("🧹 Browser closed")
-
+with open("last_run.txt", "w") as f:
+    f.write(str(datetime.datetime.now()))
 # ================== RUN ==================
 
 if __name__ == "__main__":
