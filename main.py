@@ -94,6 +94,11 @@ def check_jobs():
             ))
             driver.find_element(By.XPATH, "//button[contains(text(),'Logout All Sessions')]").click()
             driver.find_element(By.XPATH, "//button[@type='submit']").click()
+
+            # Wait for redirect
+            wait.until(lambda d: "login" not in d.current_url)
+
+            print("✅ Login successful:", driver.current_url)
         except:
             pass
 
