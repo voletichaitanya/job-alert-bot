@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import json
 import smtplib
 import os
+import datetime
 
 # ================== ENV VARIABLES ==================
 
