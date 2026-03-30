@@ -27,7 +27,7 @@ def send_email(new_jobs):
     password = APP_PASSWORD
     receiver = EMAIL
 
-    message = "Subject: 🚨 New Job Alert!\n\n"
+    message = "Subject:  New Job Alert!\n\n"
 
     for job in new_jobs:
         message += job + "\n"
