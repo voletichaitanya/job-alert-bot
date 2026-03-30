@@ -31,6 +31,11 @@ jobs:
 
       - name: Run script
         run: python main.py
+        env:
+          EMAIL: ${{ secrets.EMAIL }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        
 
       - name: Commit jobs.json
         run: |
