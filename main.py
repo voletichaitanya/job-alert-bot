@@ -156,6 +156,7 @@ def check_jobs():
         print("🧹 Browser closed")
 with open("last_run.txt", "w") as f:
     f.write(str(datetime.datetime.now()))
+print("RUN TIME:", datetime.datetime.utcnow())
 # ================== RUN ==================
 
 if __name__ == "__main__":
