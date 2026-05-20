@@ -24,7 +24,7 @@ print("✅ ENV VARIABLES LOADED")
 # ================== EMAIL FUNCTION ==================
 
 def send_email(new_jobs):
-    sender = EMAIL
+    sender = chaitanya.voleti@sasi.ac.in
     password = APP_PASSWORD
     receiver = EMAIL
 
@@ -104,7 +104,7 @@ def check_jobs():
             pass
 
         print("📄 Opening job listings...")
-        driver.get("https://www.placements.codegnan.com/student/job-listings")
+        driver.get("https://www.placements.codegnan.com/student/cr/job-listings")
 
         # 🔍 DEBUG PAGE
         wait.until(lambda d: d.execute_script("return document.readyState") == "complete")
