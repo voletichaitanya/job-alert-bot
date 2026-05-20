@@ -4,15 +4,19 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
 import time
 import json
 import smtplib
+import os
 
 # ================== ENV VARIABLES ==================
 
-EMAIL = "chaituvoleti6300@gmail.com"
-PASSWORD = "Chaitu@6300397558"
-APP_PASSWORD = "hgzbsrkrfemrywvy"
+EMAIL = os.getenv("EMAIL")
+PASSWORD = os.getenv("PASSWORD")
+APP_PASSWORD = os.getenv("APP_PASSWORD")
 
 # ================== EMAIL FUNCTION ==================
 
@@ -22,16 +26,25 @@ def send_email(new_jobs):
     receiver = EMAIL
     password = APP_PASSWORD
 
-    message = "Subject: New Job Alert!\n\n"
-    message += "NEW JOBS FOUND:\n\n"
+    body = "NEW JOBS FOUND:\n\n"
 
     for job in new_jobs:
 
-        # Convert special characters to normal ASCII
+        # Replace special unicode characters
         clean_job = job.replace("–", "-")
 
-        message += clean_job + "\n"
+        body += clean_job + "\n"
 
+    # Create email
+    msg = MIMEMultipart()
+
+    msg["From"] = sender
+    msg["To"] = receiver
+    msg["Subject"] = "New Job Alert"
+
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    # Send email
     server = smtplib.SMTP("smtp.gmail.com", 587)
 
     server.starttls()
@@ -41,7 +54,7 @@ def send_email(new_jobs):
     server.sendmail(
         sender,
         receiver,
-        message.encode("ascii", "ignore").decode()
+        msg.as_string()
     )
 
     server.quit()
@@ -51,23 +64,35 @@ def send_email(new_jobs):
 # ================== MEMORY FUNCTIONS ==================
 
 def load_old_jobs():
+
     try:
         with open("jobs.json", "r") as f:
             return json.load(f)
+
     except:
         return []
 
 def save_jobs(jobs):
+
     with open("jobs.json", "w") as f:
         json.dump(jobs, f, indent=4)
 
-# ================== MAIN LOGIC ==================
+# ================== MAIN FUNCTION ==================
 
 def check_jobs():
 
     options = Options()
 
-    service = Service(ChromeDriverManager().install())
+    # Required for GitHub Actions
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
+
+    service = Service(
+        ChromeDriverManager().install()
+    )
 
     driver = webdriver.Chrome(
         service=service,
@@ -76,20 +101,28 @@ def check_jobs():
 
     # ================== LOGIN ==================
 
-    driver.get("https://www.placements.codegnan.com/student/login")
+    driver.get(
+        "https://www.placements.codegnan.com/student/login"
+    )
 
     time.sleep(3)
 
-    driver.find_element(By.ID, "username").send_keys(EMAIL)
+    driver.find_element(
+        By.ID,
+        "username"
+    ).send_keys(EMAIL)
 
-    driver.find_element(By.ID, "password").send_keys(PASSWORD)
+    driver.find_element(
+        By.ID,
+        "password"
+    ).send_keys(PASSWORD)
 
     driver.find_element(
         By.XPATH,
         "//button[@type='submit']"
     ).click()
 
-    time.sleep(3)
+    time.sleep(5)
 
     # ================== HANDLE LOGOUT SESSIONS ==================
 
@@ -109,12 +142,12 @@ def check_jobs():
             "//button[@type='submit']"
         ).click()
 
-        time.sleep(3)
+        time.sleep(5)
 
     except:
         pass
 
-    # ================== NAVIGATE TO JOBS ==================
+    # ================== NAVIGATE ==================
 
     driver.get(
         "https://www.placements.codegnan.com/student/cr/job-listings"
@@ -133,7 +166,10 @@ def check_jobs():
 
     for row in rows:
 
-        columns = row.find_elements(By.TAG_NAME, "td")
+        columns = row.find_elements(
+            By.TAG_NAME,
+            "td"
+        )
 
         if len(columns) >= 2:
 
@@ -141,7 +177,7 @@ def check_jobs():
 
             job_title = columns[1].text.strip()
 
-            # Replace special dash
+            # Remove special dash
             job_title = job_title.replace("–", "-")
 
             job = f"{company} - {job_title}"
