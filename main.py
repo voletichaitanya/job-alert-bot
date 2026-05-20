@@ -24,7 +24,7 @@ print("✅ ENV VARIABLES LOADED")
 # ================== EMAIL FUNCTION ==================
 
 def send_email(new_jobs):
-    sender = chaitanya.voleti@sasi.ac.in
+    sender = sriramsegu2003@gmail.com
     password = APP_PASSWORD
     receiver = EMAIL
 
