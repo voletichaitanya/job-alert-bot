@@ -74,7 +74,7 @@ def send_email(new_jobs):
 
 def send_telegram(new_jobs):
 
-    message = "NEW JOBS FOUND:\n\n"
+    message = f"NEW JOBS FOUND: {len(new_jobs)}\n\n"
 
     for index, job in enumerate(new_jobs, start=1):
 
@@ -230,19 +230,26 @@ def check_jobs():
                 "td"
             )
 
+            print(f"Columns found: {len(columns)}")
+
             if len(columns) >= 2:
 
                 company = columns[0].text.strip()
 
                 job_title = columns[1].text.strip()
 
-                job_title = job_title.replace("–", "-")
+                print("Company:", company)
+                print("Job Title:", job_title)
 
-                job = f"{company} - {job_title}"
+                if company and job_title:
 
-                current_jobs.append(job)
+                    job_title = job_title.replace("–", "-")
 
-                print(job)
+                    job = f"{company} - {job_title}"
+
+                    current_jobs.append(job)
+
+                    print(job)
 
         print(f"Current jobs count: {len(current_jobs)}")
 
@@ -261,7 +268,7 @@ def check_jobs():
 
         # ================== OUTPUT ==================
 
-        if current_jobs:
+        if new_jobs:
 
             print("\nNEW JOBS FOUND:\n")
 
