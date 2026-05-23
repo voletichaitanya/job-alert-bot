@@ -268,7 +268,7 @@ def check_jobs():
 
         # ================== OUTPUT ==================
 
-        if new_jobs:
+        if current_jobs:
 
             print("\nNEW JOBS FOUND:\n")
 
