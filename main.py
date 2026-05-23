@@ -7,6 +7,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import requests
 import time
 import json
 import smtplib
@@ -18,6 +19,9 @@ EMAIL = os.getenv("EMAIL")
 PASSWORD = os.getenv("PASSWORD")
 APP_PASSWORD = os.getenv("APP_PASSWORD")
 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 # ================== EMAIL FUNCTION ==================
 
 def send_email(new_jobs):
@@ -28,24 +32,22 @@ def send_email(new_jobs):
 
     body = "NEW JOBS FOUND:\n\n"
 
-    for job in new_jobs:
+    for index, job in enumerate(new_jobs, start=1):
 
         clean_job = job.replace("–", "-")
 
-        body += clean_job + "\n"
+        body += f"{index}. {clean_job}\n"
 
-    # Create email message
     msg = MIMEMultipart()
 
     msg["From"] = sender
     msg["To"] = receiver
-    msg["Subject"] = "New Job Alert"
+    msg["Subject"] = f"{len(new_jobs)} New Job Alert(s)"
 
     msg.attach(
         MIMEText(body, "plain", "utf-8")
     )
 
-    # SMTP setup
     server = smtplib.SMTP(
         "smtp.gmail.com",
         587
@@ -58,7 +60,6 @@ def send_email(new_jobs):
         password
     )
 
-    # Send email
     server.sendmail(
         sender,
         receiver,
@@ -68,6 +69,34 @@ def send_email(new_jobs):
     server.quit()
 
     print("Email sent successfully!")
+
+# ================== TELEGRAM FUNCTION ==================
+
+def send_telegram(new_jobs):
+
+    message = "NEW JOBS FOUND:\n\n"
+
+    for index, job in enumerate(new_jobs, start=1):
+
+        clean_job = job.replace("–", "-")
+
+        message += f"{index}. {clean_job}\n"
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+
+    response = requests.post(
+        url,
+        data=data
+    )
+
+    print("Telegram response:", response.text)
+
+    print("Telegram alert sent!")
 
 # ================== MEMORY FUNCTIONS ==================
 
@@ -99,14 +128,11 @@ def check_jobs():
 
     options = Options()
 
-    # Required for GitHub Actions
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-
-    # Prevent automation detection
     options.add_argument("--disable-blink-features=AutomationControlled")
 
     # ================== DRIVER ==================
@@ -242,7 +268,11 @@ def check_jobs():
             for job in new_jobs:
                 print(job)
 
+            # Send Email
             send_email(new_jobs)
+
+            # Send Telegram
+            send_telegram(new_jobs)
 
         else:
 
@@ -256,8 +286,12 @@ def check_jobs():
 
         print("ERROR:", str(e))
 
-        # Save page source for debugging
-        with open("debug_page.html", "w", encoding="utf-8") as f:
+        with open(
+            "debug_page.html",
+            "w",
+            encoding="utf-8"
+        ) as f:
+
             f.write(driver.page_source)
 
         print("Saved debug_page.html")
