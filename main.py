@@ -1,8 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
 
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -30,27 +30,35 @@ def send_email(new_jobs):
 
     for job in new_jobs:
 
-        # Replace special unicode characters
         clean_job = job.replace("–", "-")
 
         body += clean_job + "\n"
 
-    # Create email
+    # Create email message
     msg = MIMEMultipart()
 
     msg["From"] = sender
     msg["To"] = receiver
     msg["Subject"] = "New Job Alert"
 
-    msg.attach(MIMEText(body, "plain", "utf-8"))
+    msg.attach(
+        MIMEText(body, "plain", "utf-8")
+    )
 
-    # Send email
-    server = smtplib.SMTP("smtp.gmail.com", 587)
+    # SMTP setup
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
 
     server.starttls()
 
-    server.login(sender, password)
+    server.login(
+        sender,
+        password
+    )
 
+    # Send email
     server.sendmail(
         sender,
         receiver,
@@ -66,6 +74,7 @@ def send_email(new_jobs):
 def load_old_jobs():
 
     try:
+
         with open("jobs.json", "r") as f:
             return json.load(f)
 
@@ -75,20 +84,32 @@ def load_old_jobs():
 def save_jobs(jobs):
 
     with open("jobs.json", "w") as f:
-        json.dump(jobs, f, indent=4)
+
+        json.dump(
+            jobs,
+            f,
+            indent=4
+        )
 
 # ================== MAIN FUNCTION ==================
 
 def check_jobs():
 
+    # ================== CHROME OPTIONS ==================
+
     options = Options()
 
     # Required for GitHub Actions
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
+
+    # Prevent automation detection
+    options.add_argument("--disable-blink-features=AutomationControlled")
+
+    # ================== DRIVER ==================
 
     service = Service(
         ChromeDriverManager().install()
@@ -99,119 +120,151 @@ def check_jobs():
         options=options
     )
 
-    # ================== LOGIN ==================
-
-    driver.get(
-        "https://www.placements.codegnan.com/student/login"
-    )
-
-    time.sleep(3)
-
-    driver.find_element(
-        By.ID,
-        "username"
-    ).send_keys(EMAIL)
-
-    driver.find_element(
-        By.ID,
-        "password"
-    ).send_keys(PASSWORD)
-
-    driver.find_element(
-        By.XPATH,
-        "//button[@type='submit']"
-    ).click()
-
-    time.sleep(5)
-
-    # ================== HANDLE LOGOUT SESSIONS ==================
-
     try:
 
-        logout_btn = driver.find_element(
-            By.XPATH,
-            "//button[contains(text(),'Logout All Sessions')]"
+        # ================== LOGIN ==================
+
+        driver.get(
+            "https://www.placements.codegnan.com/student/login"
         )
 
-        logout_btn.click()
+        time.sleep(5)
 
-        time.sleep(3)
+        print("Opened login page")
+
+        driver.find_element(
+            By.ID,
+            "username"
+        ).send_keys(EMAIL)
+
+        driver.find_element(
+            By.ID,
+            "password"
+        ).send_keys(PASSWORD)
 
         driver.find_element(
             By.XPATH,
             "//button[@type='submit']"
         ).click()
 
-        time.sleep(5)
+        time.sleep(8)
 
-    except:
-        pass
+        print("Current URL:", driver.current_url)
 
-    # ================== NAVIGATE ==================
+        # ================== HANDLE LOGOUT SESSIONS ==================
 
-    driver.get(
-        "https://www.placements.codegnan.com/student/cr/job-listings"
-    )
+        try:
 
-    time.sleep(5)
+            logout_btn = driver.find_element(
+                By.XPATH,
+                "//button[contains(text(),'Logout All Sessions')]"
+            )
 
-    # ================== EXTRACT JOBS ==================
+            logout_btn.click()
 
-    rows = driver.find_elements(
-        By.XPATH,
-        "//table/tbody/tr"
-    )
+            time.sleep(3)
 
-    current_jobs = []
+            driver.find_element(
+                By.XPATH,
+                "//button[@type='submit']"
+            ).click()
 
-    for row in rows:
+            time.sleep(5)
 
-        columns = row.find_elements(
-            By.TAG_NAME,
-            "td"
+            print("Handled logout sessions")
+
+        except:
+            print("No logout session popup")
+
+        # ================== NAVIGATE ==================
+
+        driver.get(
+            "https://www.placements.codegnan.com/student/cr/job-listings"
         )
 
-        if len(columns) >= 2:
+        time.sleep(8)
 
-            company = columns[0].text.strip()
+        print("Page title:", driver.title)
 
-            job_title = columns[1].text.strip()
+        # ================== EXTRACT JOBS ==================
 
-            # Remove special dash
-            job_title = job_title.replace("–", "-")
+        rows = driver.find_elements(
+            By.XPATH,
+            "//table/tbody/tr"
+        )
 
-            job = f"{company} - {job_title}"
+        print(f"Rows found: {len(rows)}")
 
-            current_jobs.append(job)
+        current_jobs = []
 
-    # ================== COMPARE ==================
+        for row in rows:
 
-    old_jobs = load_old_jobs()
+            columns = row.find_elements(
+                By.TAG_NAME,
+                "td"
+            )
 
-    new_jobs = [
-        job for job in current_jobs
-        if job not in old_jobs
-    ]
+            if len(columns) >= 2:
 
-    # ================== OUTPUT ==================
+                company = columns[0].text.strip()
 
-    if new_jobs:
+                job_title = columns[1].text.strip()
 
-        print("\nNEW JOBS FOUND:\n")
+                job_title = job_title.replace("–", "-")
 
-        for job in new_jobs:
-            print(job)
+                job = f"{company} - {job_title}"
 
-        send_email(new_jobs)
+                current_jobs.append(job)
 
-    else:
-        print("\nNo new jobs")
+                print(job)
 
-    # ================== SAVE ==================
+        print(f"Current jobs count: {len(current_jobs)}")
 
-    save_jobs(current_jobs)
+        # ================== COMPARE ==================
 
-    driver.quit()
+        old_jobs = load_old_jobs()
+
+        print(f"Old jobs count: {len(old_jobs)}")
+
+        new_jobs = [
+            job for job in current_jobs
+            if job not in old_jobs
+        ]
+
+        print(f"New jobs count: {len(new_jobs)}")
+
+        # ================== OUTPUT ==================
+
+        if new_jobs:
+
+            print("\nNEW JOBS FOUND:\n")
+
+            for job in new_jobs:
+                print(job)
+
+            send_email(new_jobs)
+
+        else:
+
+            print("\nNo new jobs")
+
+        # ================== SAVE ==================
+
+        save_jobs(current_jobs)
+
+    except Exception as e:
+
+        print("ERROR:", str(e))
+
+        # Save page source for debugging
+        with open("debug_page.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+
+        print("Saved debug_page.html")
+
+    finally:
+
+        driver.quit()
 
 # ================== RUN ==================
 
