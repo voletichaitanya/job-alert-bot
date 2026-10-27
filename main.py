@@ -1,131 +1,319 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 
+import os
+import json
+import time
+import smtplib
+from pathlib import Path
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-import requests
-import time
-import json
-import smtplib
-import os
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
-# ================== ENV VARIABLES ==================
 
-EMAIL = os.getenv("EMAIL")
-PASSWORD = os.getenv("PASSWORD")
-APP_PASSWORD = os.getenv("APP_PASSWORD")
+# ================= CONFIGURATION =================
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+EMAIL = os.getenv("EMAIL", "").strip()
+PASSWORD = os.getenv("PASSWORD", "").strip()
+APP_PASSWORD = os.getenv("APP_PASSWORD", "").replace(" ", "")
 
-# ================== EMAIL FUNCTION ==================
+LOGIN_URL = (
+    "https://placements.codegnan.com/"
+    "login?from=%2Fstudent%2Fdashboard"
+)
+
+JOBS_URL = (
+    "https://placements.codegnan.com/"
+    "student/cr/job-listings?tab=open"
+)
+
+JOBS_FILE = Path("jobs.json")
+DEBUG_DIR = Path("debug")
+
+
+# ================= EMAIL ALERT =================
 
 def send_email(new_jobs):
-
-    sender = EMAIL
-    receiver = EMAIL
-    password = APP_PASSWORD
-
-    body = "NEW JOBS FOUND:\n\n"
-
-    for index, job in enumerate(new_jobs, start=1):
-
-        clean_job = job.replace("–", "-")
-
-        body += f"{index}. {clean_job}\n"
-
-    msg = MIMEMultipart()
-
-    msg["From"] = sender
-    msg["To"] = receiver
-    msg["Subject"] = f"{len(new_jobs)} New Job Alert(s)"
-
-    msg.attach(
-        MIMEText(body, "plain", "utf-8")
-    )
-
-    server = smtplib.SMTP(
-        "smtp.gmail.com",
-        587
-    )
-
-    server.starttls()
-
-    server.login(
-        sender,
-        password
-    )
-
-    server.sendmail(
-        sender,
-        receiver,
-        msg.as_string()
-    )
-
-    server.quit()
-
-    print("Email sent successfully!")
-
-# ================== TELEGRAM FUNCTION ==================
-
-def send_telegram(new_jobs):
-
-    message = f"NEW JOBS FOUND: {len(new_jobs)}\n\n"
-
-    for index, job in enumerate(new_jobs, start=1):
-
-        clean_job = job.replace("–", "-")
-
-        message += f"{index}. {clean_job}\n"
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-
-    data = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
-    }
-
-    response = requests.post(
-        url,
-        data=data
-    )
-
-    print("Telegram response:", response.text)
-
-    print("Telegram alert sent!")
-
-# ================== MEMORY FUNCTIONS ==================
-
-def load_old_jobs():
-
-    try:
-
-        with open("jobs.json", "r") as f:
-            return json.load(f)
-
-    except:
-        return []
-
-def save_jobs(jobs):
-
-    with open("jobs.json", "w") as f:
-
-        json.dump(
-            jobs,
-            f,
-            indent=4
+    if not EMAIL or not APP_PASSWORD:
+        raise RuntimeError(
+            "EMAIL or APP_PASSWORD is missing from GitHub Secrets."
         )
 
-# ================== MAIN FUNCTION ==================
+    body = "NEW CODEGNAN JOB OPPORTUNITIES\n\n"
+
+    for index, job in enumerate(new_jobs, start=1):
+        body += f"{index}. {job}\n\n"
+
+    message = MIMEMultipart()
+    message["From"] = EMAIL
+    message["To"] = EMAIL
+    message["Subject"] = (
+        f"{len(new_jobs)} New Codegnan Job Alert(s)"
+    )
+    message.attach(MIMEText(body, "plain", "utf-8"))
+
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        server.starttls()
+        server.login(EMAIL, APP_PASSWORD)
+        server.send_message(message)
+
+    print("Email sent successfully.")
+
+
+# ================= JOB HISTORY =================
+
+def load_old_jobs():
+    if not JOBS_FILE.exists():
+        return []
+
+    try:
+        data = json.loads(JOBS_FILE.read_text(encoding="utf-8"))
+
+        if not isinstance(data, list):
+            raise ValueError("jobs.json must contain a list.")
+
+        return data
+
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Cannot safely read jobs.json: {exc}"
+        ) from exc
+
+
+def save_jobs(jobs):
+    temporary = JOBS_FILE.with_suffix(".tmp")
+
+    temporary.write_text(
+        json.dumps(jobs, indent=4, ensure_ascii=False),
+        encoding="utf-8"
+    )
+
+    temporary.replace(JOBS_FILE)
+
+
+# ================= DIAGNOSTICS =================
+
+def save_debug(driver, name):
+    DEBUG_DIR.mkdir(exist_ok=True)
+
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    prefix = DEBUG_DIR / f"{name}_{timestamp}"
+
+    (prefix.with_suffix(".html")).write_text(
+        driver.page_source,
+        encoding="utf-8"
+    )
+
+    driver.save_screenshot(str(prefix.with_suffix(".png")))
+
+    print(f"Debug files saved: {prefix}")
+
+
+# ================= LOGIN =================
+
+def find_visible(driver, selectors):
+    for by, selector in selectors:
+        for element in driver.find_elements(by, selector):
+            if element.is_displayed() and element.is_enabled():
+                return element
+
+    return None
+
+
+def login(driver):
+    if not EMAIL or not PASSWORD:
+        raise RuntimeError(
+            "Configure EMAIL and PASSWORD in GitHub Secrets."
+        )
+
+    wait = WebDriverWait(driver, 25)
+
+    # Open the direct login URL.
+    driver.get(LOGIN_URL)
+
+    print("Login URL:", driver.current_url)
+
+    username = wait.until(
+        lambda d: find_visible(d, [
+            (By.ID, "username"),
+            (By.NAME, "username"),
+            (By.NAME, "email"),
+            (By.ID, "email"),
+            (By.CSS_SELECTOR, "input[type='email']")
+        ])
+    )
+
+    password = wait.until(
+        lambda d: find_visible(d, [
+            (By.ID, "password"),
+            (By.NAME, "password"),
+            (By.CSS_SELECTOR, "input[type='password']")
+        ])
+    )
+
+    username.clear()
+    username.send_keys(EMAIL)
+
+    password.clear()
+    password.send_keys(PASSWORD)
+
+    submit = wait.until(
+        EC.element_to_be_clickable(
+            (By.CSS_SELECTOR, "button[type='submit']")
+        )
+    )
+
+    submit.click()
+
+    # Wait for login to leave the login page.
+    try:
+        wait.until(
+            lambda d: "/login" not in d.current_url.lower()
+        )
+    except TimeoutException:
+        save_debug(driver, "login_failed")
+        raise RuntimeError(
+            "Login did not complete. Check the saved diagnostics."
+        )
+
+    print("Login successful. Current URL:", driver.current_url)
+
+
+# ================= OPEN TO APPLY =================
+
+def open_active_jobs(driver):
+    # Navigate directly to the Open to Apply listings.
+    driver.get(JOBS_URL)
+
+    WebDriverWait(driver, 25).until(
+        EC.presence_of_element_located((By.TAG_NAME, "body"))
+    )
+
+    time.sleep(3)
+
+    if "/login" in driver.current_url.lower():
+        save_debug(driver, "session_redirect")
+        raise RuntimeError("The job portal redirected to login.")
+
+    # Select the correct tab if the website has not selected it
+    # automatically from ?tab=open.
+    tabs = driver.find_elements(
+        By.XPATH,
+        "//*[self::a or self::button or @role='tab']"
+        "[contains(translate(normalize-space(.),"
+        "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),"
+        "'open to apply')]"
+    )
+
+    for tab in tabs:
+        if tab.is_displayed() and tab.is_enabled():
+            try:
+                tab.click()
+                time.sleep(2)
+                break
+            except Exception:
+                continue
+
+    print("Active jobs URL:", driver.current_url)
+    print("Page title:", driver.title)
+
+
+# ================= EXTRACT ACTIVE JOBS =================
+
+def clean_text(value):
+    return " ".join(value.replace("\u00a0", " ").split()).strip()
+
+
+def extract_jobs(driver):
+    jobs = {}
+
+    # Strategy 1: Read table rows.
+    rows = driver.find_elements(
+        By.CSS_SELECTOR,
+        "table tbody tr"
+    )
+
+    for row in rows:
+        if not row.is_displayed():
+            continue
+
+        cells = row.find_elements(By.TAG_NAME, "td")
+
+        values = [
+            clean_text(cell.text)
+            for cell in cells
+            if clean_text(cell.text)
+        ]
+
+        if len(values) >= 2:
+            # Retain the visible job details for comparison.
+            job = " | ".join(values)
+
+            if job:
+                jobs[job.casefold()] = job
+
+    if jobs:
+        print("Extracted listings from table:", len(jobs))
+        return list(jobs.values())
+
+    # Strategy 2: Common job-card layouts.
+    # These selectors are fallbacks, not verified Codegnan selectors.
+    selectors = [
+        "[data-testid*='job']",
+        "[class*='job-card']",
+        "[class*='jobCard']",
+        "[class*='job-listing']",
+        "[class*='JobCard']"
+    ]
+
+    for selector in selectors:
+        for card in driver.find_elements(By.CSS_SELECTOR, selector):
+            if not card.is_displayed():
+                continue
+
+            text = clean_text(card.text)
+
+            if 8 <= len(text) <= 2500:
+                jobs[text.casefold()] = text
+
+        if jobs:
+            print(
+                f"Extracted candidate cards using {selector}: "
+                f"{len(jobs)}"
+            )
+            return list(jobs.values())
+
+    # Distinguish a genuinely empty Open to Apply tab from
+    # an extraction failure.
+    body = clean_text(
+        driver.find_element(By.TAG_NAME, "body").text
+    ).lower()
+
+    valid_empty_messages = [
+        "no opportunities at the moment",
+        "no eligible roles open for application",
+        "no jobs available"
+    ]
+
+    if any(message in body for message in valid_empty_messages):
+        print("Portal explicitly reports no active opportunities.")
+        return []
+
+    save_debug(driver, "job_extraction_failed")
+
+    raise RuntimeError(
+        "No listings extracted and no confirmed empty-state message "
+        "was found. Inspect the debug HTML before changing jobs.json."
+    )
+
+
+# ================= MAIN =================
 
 def check_jobs():
-
-    # ================== CHROME OPTIONS ==================
-
     options = Options()
 
     options.add_argument("--headless=new")
@@ -133,181 +321,50 @@ def check_jobs():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("--disable-blink-features=AutomationControlled")
 
-    # ================== DRIVER ==================
-
-    service = Service(
-        ChromeDriverManager().install()
-    )
-
-    driver = webdriver.Chrome(
-        service=service,
-        options=options
-    )
+    driver = webdriver.Chrome(options=options)
 
     try:
+        # 1. Login through the direct login URL.
+        login(driver)
 
-        # ================== LOGIN ==================
+        # 2. Open only Open to Apply.
+        open_active_jobs(driver)
 
-        driver.get(
-            "https://www.placements.codegnan.com/student/cr/job-listings?tab=open"
-        )
+        # 3. Extract currently active opportunities.
+        current_jobs = extract_jobs(driver)
 
-        time.sleep(5)
-
-        print("Opened login page")
-
-        driver.find_element(
-            By.ID,
-            "username"
-        ).send_keys(EMAIL)
-
-        driver.find_element(
-            By.ID,
-            "password"
-        ).send_keys(PASSWORD)
-
-        driver.find_element(
-            By.XPATH,
-            "//button[@type='submit']"
-        ).click()
-
-        time.sleep(8)
-
-        print("Current URL:", driver.current_url)
-
-        # ================== HANDLE LOGOUT SESSIONS ==================
-
-        try:
-
-            logout_btn = driver.find_element(
-                By.XPATH,
-                "//button[contains(text(),'Logout All Sessions')]"
-            )
-
-            logout_btn.click()
-
-            time.sleep(3)
-
-            driver.find_element(
-                By.XPATH,
-                "//button[@type='submit']"
-            ).click()
-
-            time.sleep(5)
-
-            print("Handled logout sessions")
-
-        except:
-            print("No logout session popup")
-
-        # ================== NAVIGATE ==================
-
-        driver.get(
-            "https://www.placements.codegnan.com/student/cr/job-listings"
-        )
-
-        time.sleep(8)
-
-        print("Page title:", driver.title)
-
-        # ================== EXTRACT JOBS ==================
-
-        rows = driver.find_elements(
-            By.XPATH,
-            "//table/tbody/tr"
-        )
-
-        print(f"Rows found: {len(rows)}")
-
-        current_jobs = []
-
-        for row in rows:
-
-            columns = row.find_elements(
-                By.TAG_NAME,
-                "td"
-            )
-
-            print(f"Columns found: {len(columns)}")
-
-            if len(columns) >= 2:
-
-                company = columns[0].text.strip()
-
-                job_title = columns[1].text.strip()
-
-                print("Company:", company)
-                print("Job Title:", job_title)
-
-                if company and job_title:
-
-                    job_title = job_title.replace("–", "-")
-
-                    job = f"{company} - {job_title}"
-
-                    current_jobs.append(job)
-
-                    print(job)
-
-        print(f"Current jobs count: {len(current_jobs)}")
-
-        # ================== COMPARE ==================
-
+        # 4. Compare with the previous saved results.
         old_jobs = load_old_jobs()
-
-        print(f"Old jobs count: {len(old_jobs)}")
+        old_set = {str(job).casefold() for job in old_jobs}
 
         new_jobs = [
             job for job in current_jobs
-            if job not in old_jobs
+            if job.casefold() not in old_set
         ]
 
-        print(f"New jobs count: {len(new_jobs)}")
+        print("Previously saved active listings:", len(old_jobs))
+        print("Current active listings:", len(current_jobs))
+        print("New active listings:", len(new_jobs))
 
-        # ================== OUTPUT ==================
-
+        # 5. Email only newly discovered active opportunities.
         if new_jobs:
-
-            print("\nNEW JOBS FOUND:\n")
-
-            for job in new_jobs:
-                print(job)
-
-            # Send Email
             send_email(new_jobs)
-
-            # Send Telegram
-            send_telegram(new_jobs)
-
         else:
+            print("No new Open to Apply opportunities.")
 
-            print("\nNo new jobs")
-
-        # ================== SAVE ==================
-
+        # 6. Update history after successful extraction and alerting.
         save_jobs(current_jobs)
 
-    except Exception as e:
+        print("Job history updated successfully.")
 
-        print("ERROR:", str(e))
-
-        with open(
-            "debug_page.html",
-            "w",
-            encoding="utf-8"
-        ) as f:
-
-            f.write(driver.page_source)
-
-        print("Saved debug_page.html")
+    except Exception as exc:
+        print("ERROR:", str(exc))
+        raise
 
     finally:
-
         driver.quit()
 
-# ================== RUN ==================
 
 if __name__ == "__main__":
     check_jobs()
