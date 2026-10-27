@@ -151,7 +151,7 @@ def check_jobs():
         # ================== LOGIN ==================
 
         driver.get(
-            "https://www.placements.codegnan.com/student/login"
+            "https://www.placements.codegnan.com/student/cr/job-listings?tab=open"
         )
 
         time.sleep(5)
