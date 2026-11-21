@@ -10,6 +10,10 @@ on:
   schedule:
     - cron: "*/10 * * * *"
 
+concurrency:
+  group: job-alert-bot
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
@@ -20,46 +24,72 @@ jobs:
       APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
 
     steps:
+      # 1. Download repository
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      # 2. Install Python
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
 
+      # 3. Install Chrome only
+      # Do not install a separate ChromeDriver here
       - name: Set up Chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
-          install-chromedriver: true
+          install-chromedriver: false
           install-dependencies: true
 
-      - name: Show browser versions
+      # 4. Check installed versions
+      - name: Check environment
         run: |
-          chrome --version
-          chromedriver --version
+          echo "Python version:"
           python --version
 
+          echo "Chrome version:"
+          chrome --version
+
+          echo "Chrome binary:"
+          which chrome
+
+      # 5. Install Python dependencies
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 6. Check required files
       - name: Check project files
         run: |
           ls -la
           test -f main.py
           test -f requirements.txt
+          test -f jobs.json
 
+      # 7. Run the bot
       - name: Run Job Alert Bot
-        run: python -u main.py
+        env:
+          SE_SKIP_DRIVER_IN_PATH: "true"
+        run: |
+          python -u main.py
 
+      # 8. Save job history
       - name: Commit updated job history
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add jobs.json
-          git diff --cached --quiet || git commit -m "Update job history"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "No new jobs found. Job history unchanged."
+          else
+            git commit -m "Update job history"
+            git push
+          fi
