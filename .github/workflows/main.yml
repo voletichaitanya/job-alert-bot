@@ -79,17 +79,64 @@ jobs:
           python -u main.py
 
       # 8. Save job history
+      
       - name: Commit updated job history
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          git fetch origin main
+
+          python - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          jobs_file = Path("jobs.json")
+
+          if jobs_file.exists():
+              local_jobs = json.loads(jobs_file.read_text(encoding="utf-8"))
+          else:
+              local_jobs = []
+
+          result = subprocess.run(
+              ["git", "show", "origin/main:jobs.json"],
+              capture_output=True,
+              text=True
+          )
+
+          if result.returncode == 0:
+              remote_jobs = json.loads(result.stdout)
+          else:
+              remote_jobs = []
+
+          merged = []
+          seen = set()
+
+          for job in remote_jobs + local_jobs:
+              key = str(job).casefold()
+              if key not in seen:
+                  seen.add(key)
+                  merged.append(job)
+
+          Path("/tmp/merged_jobs.json").write_text(
+              json.dumps(merged, indent=4, ensure_ascii=False),
+              encoding="utf-8"
+          )
+
+          print("Remote history:", len(remote_jobs))
+          print("Local history:", len(local_jobs))
+          print("Merged history:", len(merged))
+          PY
+
+          git reset --hard origin/main
+          cp /tmp/merged_jobs.json jobs.json
           git add jobs.json
 
           if git diff --cached --quiet; then
-            echo "No new jobs found. Job history unchanged."
+            echo "No job history changes to commit."
           else
             git commit -m "Update job history"
-            git push
+            git push origin main
           fi
