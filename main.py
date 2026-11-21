@@ -37,31 +37,97 @@ DEBUG_DIR = Path("debug")
 
 # ================= EMAIL ALERT =================
 
-def send_email(new_jobs):
+
+def send_email(current_jobs, new_jobs):
     if not EMAIL or not APP_PASSWORD:
         raise RuntimeError(
             "EMAIL or APP_PASSWORD is missing from GitHub Secrets."
         )
 
-    body = "NEW CODEGNAN JOB OPPORTUNITIES\n\n"
+    total_jobs = len(current_jobs)
+    total_new = len(new_jobs)
 
-    for index, job in enumerate(new_jobs, start=1):
-        body += f"{index}. {job}\n\n"
+    if total_jobs == 0:
+        subject = "Codegnan Job Alert: No Jobs Found"
+
+        body = (
+            "CODEGNAN JOB ALERT\n\n"
+            "The Job Alert Bot executed successfully.\n\n"
+            "No Open to Apply job opportunities were found "
+            "on the Codegnan portal during this run.\n\n"
+            "The next scheduled check will run automatically."
+        )
+
+    else:
+        subject = (
+            f"Codegnan Job Alert: {total_jobs} "
+            f"Active Job(s) Found"
+        )
+
+        new_set = {job.casefold() for job in new_jobs}
+
+        body = (
+            "CODEGNAN JOB ALERT\n\n"
+            f"Current active opportunities: {total_jobs}\n"
+            f"Newly discovered opportunities: {total_new}\n\n"
+        )
+
+        if total_new:
+            body += (
+                "NEW OPPORTUNITIES:\n\n"
+                "These listings were not present in your "
+                "previous job history.\n\n"
+            )
+
+            for index, job in enumerate(new_jobs, start=1):
+                body += f"{index}. {job}\n\n"
+
+        else:
+            body += (
+                "No new opportunities were discovered "
+                "during this run.\n\n"
+            )
+
+        body += (
+            "\nALL CURRENT OPEN TO APPLY JOBS:\n\n"
+        )
+
+        for index, job in enumerate(current_jobs, start=1):
+            status = (
+                " [NEW]"
+                if job.casefold() in new_set
+                else ""
+            )
+
+            body += f"{index}. {job}{status}\n\n"
 
     message = MIMEMultipart()
     message["From"] = EMAIL
     message["To"] = EMAIL
-    message["Subject"] = (
-        f"{len(new_jobs)} New Codegnan Job Alert(s)"
-    )
-    message.attach(MIMEText(body, "plain", "utf-8"))
+    message["Subject"] = subject
 
-    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+    message.attach(
+        MIMEText(body, "plain", "utf-8")
+    )
+
+    print("Connecting to Gmail SMTP...")
+
+    with smtplib.SMTP(
+        "smtp.gmail.com",
+        587,
+        timeout=30
+    ) as server:
+        server.ehlo()
         server.starttls()
+        server.ehlo()
+
         server.login(EMAIL, APP_PASSWORD)
+
         server.send_message(message)
 
     print("Email sent successfully.")
+    print("Email subject:", subject)
+
 
 
 # ================= JOB HISTORY =================
@@ -313,6 +379,7 @@ def extract_jobs(driver):
 
 # ================= MAIN =================
 
+
 def check_jobs():
     options = Options()
 
@@ -325,38 +392,65 @@ def check_jobs():
     driver = webdriver.Chrome(options=options)
 
     try:
-        # 1. Login through the direct login URL.
+        # 1. Login to Codegnan
         login(driver)
 
-        # 2. Open only Open to Apply.
+        # 2. Open Open to Apply listings
         open_active_jobs(driver)
 
-        # 3. Extract currently active opportunities.
+        # 3. Extract current active jobs
         current_jobs = extract_jobs(driver)
 
-        # 4. Compare with the previous saved results.
+        # 4. Load previous job history
         old_jobs = load_old_jobs()
-        old_set = {str(job).casefold() for job in old_jobs}
 
+        old_set = {
+            str(job).casefold()
+            for job in old_jobs
+        }
+
+        # 5. Identify newly discovered jobs
         new_jobs = [
             job for job in current_jobs
             if job.casefold() not in old_set
         ]
 
-        print("Previously saved active listings:", len(old_jobs))
-        print("Current active listings:", len(current_jobs))
-        print("New active listings:", len(new_jobs))
+        print("--------------------------------")
+        print("Job Alert Bot Results")
+        print("--------------------------------")
 
-        # 5. Email only newly discovered active opportunities.
-        if new_jobs:
-            send_email(new_jobs)
-        else:
-            print("No new Open to Apply opportunities.")
+        print("Previously recorded jobs:", len(old_jobs))
+        print("Current active jobs:", len(current_jobs))
+        print("New jobs discovered:", len(new_jobs))
 
-        # 6. Update history after successful extraction and alerting.
-        save_jobs(current_jobs)
+        # 6. Send an email EVERY successful execution
+        print("Preparing email notification...")
+
+        send_email(
+            current_jobs=current_jobs,
+            new_jobs=new_jobs
+        )
+
+        # 7. Preserve old history and add current jobs
+        # Do not erase history when the portal has zero jobs.
+        combined_jobs = list(old_jobs)
+
+        combined_set = {
+            str(job).casefold()
+            for job in combined_jobs
+        }
+
+        for job in current_jobs:
+            if job.casefold() not in combined_set:
+                combined_jobs.append(job)
+                combined_set.add(job.casefold())
+
+        # 8. Save history only after email succeeds
+        save_jobs(combined_jobs)
 
         print("Job history updated successfully.")
+        print("Total jobs recorded in history:", len(combined_jobs))
+        print("Job Alert Bot completed successfully.")
 
     except Exception as exc:
         print("ERROR:", str(exc))
@@ -364,6 +458,7 @@ def check_jobs():
 
     finally:
         driver.quit()
+
 
 
 if __name__ == "__main__":
